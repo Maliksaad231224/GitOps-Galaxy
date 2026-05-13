@@ -14,8 +14,8 @@ spec:
   project: default
   source:
     repoURL: https://github.com/Maliksaad231224/gitops-galaxy.git
-    targetRevision: main
-    path: helm-charts/sherlock-app
+    targetRevision: master
+    path: helm-charts
     helm:
       valueFiles:
         - values.yaml
