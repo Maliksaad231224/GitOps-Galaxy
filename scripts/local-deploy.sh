@@ -193,23 +193,6 @@ argocd app sync sherlock-app-prod --server "$ARGOCD_SERVER"
 echo "✅ PROD sync initiated"
 echo ""
 
-echo "⏳ Waiting for all pods to be ready..."
-echo ""
-echo "DEV namespace:"
-kubectl wait --for=condition=Ready pod -n dev -l app=frontend --timeout=300s || true
-kubectl wait --for=condition=Ready pod -n dev -l app=backend --timeout=300s || true
-echo ""
-
-echo "STAGING namespace:"
-kubectl wait --for=condition=Ready pod -n staging -l app=frontend --timeout=300s || true
-kubectl wait --for=condition=Ready pod -n staging -l app=backend --timeout=300s || true
-echo ""
-
-echo "PROD namespace:"
-kubectl wait --for=condition=Ready pod -n prod -l app=frontend --timeout=300s || true
-kubectl wait --for=condition=Ready pod -n prod -l app=backend --timeout=300s || true
-echo ""
-
 echo "📌 Step 11: Verifying Deployment Status..."
 echo ""
 echo "ArgoCD Applications Status:"
@@ -238,10 +221,6 @@ argocd app get sherlock-app-staging
 echo "production logs"
 argocd app get sherlock-app-prod
 
-echo "rolling out the environemnts"
-kubectl rollout status deployment/frontend -n dev
-kubectl rollout status deployment/frontend -n staging
-kubectl rollout status deployment/frontend -n prod
 echo "dev logs"
 argocd app get sherlock-app-dev
 echo "staging logs"
