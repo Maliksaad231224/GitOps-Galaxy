@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Sherlock Logs</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="page">
+    <header class="header">
+      <div>
+        <h1>Sherlock Logs</h1>
+        <p class="sub">Diagnostic view of your virtual infrastructure</p>
+      </div>
+      <div class="pill" id="servedBy">Served by: ...</div>
+    </header>
+
+    <section class="grid">
+      <div class="card">
+        <h2>Backend Health</h2>
+        <div class="row">
+          <div class="label">Status</div>
+          <div class="value" id="health">Loading...</div>
+        </div>
+        <div class="row">
+          <div class="label">Last update</div>
+          <div class="value" id="lastUpdate">-</div>
+        </div>
+        <button class="btn" id="refreshBtn">Refresh metrics</button>
+      </div>
+
+      <div class="card">
+        <h2>Key Metrics</h2>
+        <div class="row"><div class="label">Backend hostname</div><div class="value" id="bh">-</div></div>
+        <div class="row"><div class="label">Backend IP</div><div class="value" id="bip">-</div></div>
+        <div class="row"><div class="label">OS</div><div class="value" id="os">-</div></div>
+        <div class="row"><div class="label">Uptime</div><div class="value" id="uptime">-</div></div>
+        <div class="row"><div class="label">CPU (logical)</div><div class="value" id="cpu">-</div></div>
+        <div class="row"><div class="label">RAM used</div><div class="value" id="ram">-</div></div>
+      </div>
+
+      <div class="card full">
+        <h2>Raw /metrics JSON</h2>
+        <pre id="raw" class="code">Loading...</pre>
+      </div>
+    </section>
+
+    <footer class="footer">
+      Tip: refresh this page repeatedly via the load balancer to see <span class="mono">X-Served-By</span> change between web1 and web2.
+    </footer>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

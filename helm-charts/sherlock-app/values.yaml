@@ -1,0 +1,37 @@
+replicaCount: 2
+
+frontend:
+  image:
+    repository: tumbaoka/sherlock-logs-frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+backend:
+  image:
+    repository: tumbaoka/sherlock-logs-backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+  env:
+    NODE_ENV: production
+    LOG_LEVEL: info
+    DATABASE_URL: "postgresql://postgres:postgres@postgres.database.svc.cluster.local:5432/sherlock"
+
+service:
+  type: ClusterIP
+  frontendPort: 80
+  backendPort: 3000

@@ -1,0 +1,8 @@
+apiVersion: v2
+name: sherlock-app
+description: Sherlock Logs Fullstack Application - Frontend + Backend
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+maintainers:
+  - name: Malik Saad

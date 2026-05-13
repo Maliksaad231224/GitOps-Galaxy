@@ -1,0 +1,12 @@
+replicaCount: 1
+
+frontend:
+  image:
+    tag: "dev"
+
+backend:
+  image:
+    tag: "dev"
+  env:
+    NODE_ENV: development
+    LOG_LEVEL: debug

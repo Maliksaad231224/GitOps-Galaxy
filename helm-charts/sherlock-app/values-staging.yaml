@@ -1,0 +1,12 @@
+replicaCount: 2
+
+frontend:
+  image:
+    tag: staging
+
+backend:
+  image:
+    tag: staging
+  env:
+    NODE_ENV: staging
+    LOG_LEVEL: info

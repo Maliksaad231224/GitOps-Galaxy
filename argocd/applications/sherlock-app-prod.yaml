@@ -1,0 +1,31 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sherlock-app-prod
+  namespace: argocd
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: |
+      frontend=tumbaoka/sherlock-logs-frontend
+      backend=tumbaoka/sherlock-logs-backend
+    argocd-image-updater.argoproj.io/write-back-method: git
+    argocd-image-updater.argoproj.io/frontend.semver.constraint: "~1.0.0"
+    argocd-image-updater.argoproj.io/backend.semver.constraint: "~1.0.0"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Maliksaad231224/gitops-galaxy.git
+    targetRevision: main
+    path: helm-charts/sherlock-app
+    helm:
+      valueFiles:
+        - values.yaml
+        - values-prod.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: prod
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

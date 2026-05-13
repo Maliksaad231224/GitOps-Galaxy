@@ -1,0 +1,19 @@
+replicaCount: 3
+
+frontend:
+  image:
+    tag: prod
+
+backend:
+  image:
+    tag: prod
+  resources:
+    requests:
+      cpu: 300m
+      memory: 512Mi
+    limits:
+      cpu: 1500m
+      memory: 2Gi
+  env:
+    NODE_ENV: production
+    LOG_LEVEL: warn

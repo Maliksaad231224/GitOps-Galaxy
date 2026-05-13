@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sherlock-config
+data:
+  APP_NAME: "Sherlock Logs"
+  ENVIRONMENT: "{{ .Values.backend.env.NODE_ENV }}"
