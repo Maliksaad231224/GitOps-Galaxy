@@ -129,19 +129,119 @@ argocd login 192.168.56.10:30080 \
   --grpc-web \
   --skip-test-tls
 cd ..
-echo "📌 Step 6: Applying All ArgoCD Applications..."
-kubectl apply -f argocd/applications/
+
+echo "📌 Step 6: Fixing DNS Issue (ndots:1 for repo-server)..."
+echo "⚠️  Fixing DNS resolution issue in ArgoCD repo-server..."
+kubectl patch deployment argocd-repo-server -n argocd --type merge -p '{"spec":{"template":{"spec":{"dnsConfig":{"options":[{"name":"ndots","value":"1"}]}}}}}'
+kubectl rollout restart deployment/argocd-repo-server -n argocd
+echo "⏳ Waiting for repo-server to be ready..."
+kubectl wait --for=condition=Available deployment/argocd-repo-server -n argocd --timeout=300s || true
+
+echo "📌 Step 7: Fixing Helm Chart Structure..."
+echo "⚠️  Removing values files from templates directory..."
+rm -f helm-charts/sherlock-app/templates/values-*.yaml
+echo "✅ Values files removed from templates"
+
+echo "📌 Step 8: Applying All ArgoCD Applications..."
+echo "Applying sherlock-app-dev..."
+kubectl apply -f argocd/applications/sherlock-app-dev.yaml
+echo "Applying sherlock-app-staging..."
+kubectl apply -f argocd/applications/sherlock-app-staging.yaml
+echo "Applying sherlock-app-prod..."
+kubectl apply -f argocd/applications/sherlock-app-prod.yaml
+echo "Applying postgres-dev..."
+kubectl apply -f argocd/applications/postgres-dev.yaml
+
+echo "📌 Step 9: Syncing All Environments..."
+echo ""
+echo "🔄 Syncing DEV environment..."
+argocd app refresh sherlock-app-dev --hard || true
+sleep 2
+argocd app sync sherlock-app-dev --force
+echo "✅ DEV sync initiated"
+echo ""
+
+echo "🔄 Syncing STAGING environment..."
+argocd app refresh sherlock-app-staging --hard || true
+sleep 2
+argocd app sync sherlock-app-staging --force
+echo "✅ STAGING sync initiated"
+echo ""
+
+echo "🔄 Syncing PROD environment..."
+argocd app refresh sherlock-app-prod --hard || true
+sleep 2
+argocd app sync sherlock-app-prod --force
+echo "✅ PROD sync initiated"
+echo ""
+
+echo "⏳ Waiting for all pods to be ready..."
+echo ""
+echo "DEV namespace:"
+kubectl wait --for=condition=Ready pod -n dev -l app=frontend --timeout=300s || true
+kubectl wait --for=condition=Ready pod -n dev -l app=backend --timeout=300s || true
+echo ""
+
+echo "STAGING namespace:"
+kubectl wait --for=condition=Ready pod -n staging -l app=frontend --timeout=300s || true
+kubectl wait --for=condition=Ready pod -n staging -l app=backend --timeout=300s || true
+echo ""
+
+echo "PROD namespace:"
+kubectl wait --for=condition=Ready pod -n prod -l app=frontend --timeout=300s || true
+kubectl wait --for=condition=Ready pod -n prod -l app=backend --timeout=300s || true
+echo ""
+
+echo "📌 Step 10: Verifying Deployment Status..."
+echo ""
+echo "ArgoCD Applications Status:"
+argocd app list
+echo ""
+
+echo "DEV Environment Resources:"
+kubectl get all -n dev
+echo ""
+
+echo "STAGING Environment Resources:"
+kubectl get all -n staging
+echo ""
+
+echo "PROD Environment Resources:"
+kubectl get all -n prod
+echo ""
 
 echo "=================================================="
 echo "🎉 SETUP COMPLETED SUCCESSFULLY!"
 echo "=================================================="
 echo ""
-echo "Useful Commands:"
-echo "   argocd app list"
-echo "   argocd app get sherlock-app-dev"
-echo "   kubectl get pods -A"
+echo "📊 Deployment Summary:"
+echo "   ✅ ArgoCD installed and configured"
+echo "   ✅ DNS issue fixed (ndots:1)"
+echo "   ✅ Helm chart structure corrected"
+echo "   ✅ All 3 environments synced (dev, staging, prod)"
 echo ""
-echo "ArgoCD UI: https://192.168.56.10:30080"
+echo "🔗 Useful Commands:"
+echo "   argocd app list                               # List all apps"
+echo "   argocd app get sherlock-app-dev              # Check dev app status"
+echo "   argocd app get sherlock-app-staging          # Check staging app status"
+echo "   argocd app get sherlock-app-prod             # Check prod app status"
+echo "   kubectl get all -n dev                       # View dev resources"
+echo "   kubectl get all -n staging                   # View staging resources"
+echo "   kubectl get all -n prod                      # View prod resources"
+echo "   kubectl logs -n argocd deployment/argocd-repo-server  # Debug repo-server"
+echo ""
+echo "🌐 ArgoCD UI: https://192.168.56.10:30080"
 echo "Username: admin"
 echo "Password: $ADMIN_PASS"
+echo ""
+echo "❌ Troubleshooting:"
+echo "   # If pods are not deploying, check ArgoCD app sync status:"
+echo "   argocd app get sherlock-app-dev --refresh"
+echo ""
+echo "   # If DNS still fails, verify with:"
+echo "   kubectl exec -n argocd -ti <repo-server-pod> -- dig github.com"
+echo ""
+echo "   # To manually sync an app:"
+echo "   argocd app sync sherlock-app-dev --force"
+echo ""
 echo "=================================================="
