@@ -1,0 +1,48 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-test-ping
+  namespace: db-layer
+spec:
+  template:
+    metadata:
+      name: db-test-ping
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: psql
+          image: postgres:15
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: my-db-postgresql
+                  key: postgres-password
+            - name: PGPASSWORD_ALT
+              valueFrom:
+                secretKeyRef:
+                  name: my-db-postgresql
+                  key: postgresql-password
+                  optional: true
+            - name: PGHOST
+              value: my-db-postgresql
+            - name: PGUSER
+              value: postgres
+            - name: PGDATABASE
+              value: startup_db
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              # Prefer primary secret key, fall back to alternate key if present
+              PGPASS=${PGPASSWORD:-$PGPASSWORD_ALT}
+              export PGPASSWORD="$PGPASS"
+              echo "Waiting for PostgreSQL to be ready..."
+              until pg_isready -h "$PGHOST" -p 5432 -U "$PGUSER" -d "$PGDATABASE" >/dev/null 2>&1; do
+                sleep 2
+              done
+              echo "Postgres is ready — running test query"
+              psql -h "$PGHOST" -U "$PGUSER" -d "$PGDATABASE" -c "SELECT 1;"
+  backoffLimit: 3

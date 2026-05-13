@@ -35,7 +35,24 @@ kubectl rollout status statefulset/my-db-postgresql -n db-layer --timeout=3m || 
 # Run connectivity test job
 # Delete old job first (Jobs are immutable — can't kubectl apply over one)
 kubectl delete job db-test-ping -n db-layer --ignore-not-found
-kubectl apply -f /home/vagrant/project/manifests/db/test-db-job.yaml
+# Resolve job manifest path relative to the script so it works both on host and inside VM
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+JOB_MANIFEST="$REPO_ROOT/manifests/db/test-db-job.yaml"
+
+if [ ! -f "$JOB_MANIFEST" ]; then
+  echo "Job manifest not found at $JOB_MANIFEST — attempting to refresh repository"
+  if command -v git >/dev/null 2>&1; then
+    (cd "$REPO_ROOT" && git pull --ff-only) || true
+  fi
+fi
+
+if [ ! -f "$JOB_MANIFEST" ]; then
+  echo "ERROR: Job manifest $JOB_MANIFEST not found. Please ensure the file exists or run 'git pull' in the repo root: $REPO_ROOT"
+  exit 1
+fi
+
+kubectl apply -f "$JOB_MANIFEST"
 
 echo "Waiting for db-test-ping job to complete..."
 kubectl wait --for=condition=complete job/db-test-ping -n db-layer --timeout=120s || true
