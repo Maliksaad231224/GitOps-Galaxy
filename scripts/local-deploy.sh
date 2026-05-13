@@ -158,7 +158,7 @@ echo "📌 Step 7: Fixing Helm Chart Structure..."
 echo "⚠️  Removing values files from templates directory..."
 rm -f helm-charts/sherlock-app/templates/values-*.yaml
 echo "✅ Values files removed from templates"
-cd ..
+
 cd argocd
 echo "📌 Step 8: Applying All ArgoCD Applications..."
 echo "Applying sherlock-app-dev..."
@@ -169,51 +169,6 @@ echo "Applying sherlock-app-prod..."
 kubectl apply -f applications/sherlock-app-prod.yaml
 echo "Applying postgres-dev..."
 kubectl apply -f applications/postgres-dev.yaml
-
-echo "📌 Step 9: Syncing and Verifying Database..."
-echo ""
-echo "🔄 Syncing POSTGRES database app..."
-argocd app get postgres --refresh --server "$ARGOCD_SERVER" 
-sleep 5
-argocd app sync postgres --server "$ARGOCD_SERVER"
-argocd app wait postgres --sync --health --timeout 300 --server "$ARGOCD_SERVER" || true
-echo "✅ POSTGRES sync initiated"
-echo ""
-
-echo "⏳ Waiting for PostgreSQL StatefulSet to appear and become ready..."
-for i in $(seq 1 60); do
-  if kubectl get statefulset -n database postgres-postgresql >/dev/null 2>&1; then
-    if kubectl rollout status statefulset/postgres-postgresql -n database --timeout=10s >/dev/null 2>&1; then
-      break
-    fi
-  fi
-  echo "   waiting for PostgreSQL StatefulSet... ($i/60)"
-  sleep 5
-done
-
-if ! kubectl get statefulset -n database postgres-postgresql >/dev/null 2>&1; then
-  echo "❌ PostgreSQL StatefulSet did not appear in time"
-  kubectl get all -n database || true
-  exit 1
-fi
-
-POSTGRES_POD=""
-POSTGRES_POD=$(kubectl get pods -n database -l app.kubernetes.io/instance=postgres,app.kubernetes.io/name=postgresql -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
-
-if [ -z "$POSTGRES_POD" ]; then
-  echo "❌ PostgreSQL pod did not appear in time"
-  kubectl get all -n database || true
-  exit 1
-fi
-
-kubectl wait --for=condition=Ready pod -n database "$POSTGRES_POD" --timeout=300s
-
-echo "🔎 Running PostgreSQL verification queries..."
-kubectl exec -n database "$POSTGRES_POD" -- bash -c "PGPASSWORD=postgres psql -U postgres -d sherlock -c 'SELECT 1 AS db_connection_ok;'"
-kubectl exec -n database "$POSTGRES_POD" -- bash -c "PGPASSWORD=postgres psql -U postgres -d sherlock -c 'SELECT current_database() AS db, current_user AS db_user;'"
-kubectl exec -n database "$POSTGRES_POD" -- bash -c "PGPASSWORD=postgres psql -U postgres -d sherlock -c '\\dt'"
-echo "✅ PostgreSQL is reachable and queryable"
-echo ""
 
 echo "📌 Step 10: Syncing All Environments..."
 echo ""
@@ -287,7 +242,12 @@ echo "rolling out the environemnts"
 kubectl rollout status deployment/frontend -n dev
 kubectl rollout status deployment/frontend -n staging
 kubectl rollout status deployment/frontend -n prod
-
+echo "dev logs"
+argocd app get sherlock-app-dev
+echo "staging logs"
+argocd app get sherlock-app-staging
+echo "production logs"
+argocd app get sherlock-app-prod
 echo "sleep for 60 sec"
 sleep 60
 echo "=================================================="
