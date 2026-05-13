@@ -8,5 +8,6 @@ Vagrant.configure("2") do |config|
     vb.cpus = 4
   end
   config.vm.synced_folder ".", "/home/vagrant/project", type: "virtualbox"
+  config.vm.provision "shell", path: "execution.sh"
  
 end

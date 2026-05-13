@@ -1,48 +1,53 @@
 #!/bin/bash
 set -e
 
-DOCKER_USERNAME="${DOCKER_USERNAME:-tumbaoka}"
+export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+if [ ! -f "$KUBECONFIG" ]; then
+  echo "⚠️  Kubeconfig not found at $KUBECONFIG; kubectl/helm may fail"
+fi
+
+DOCKER_USERNAME="$(printf '%s' "${DOCKER_USERNAME:-tumbaoka}" | tr -d '\r')"
 
 echo "======================================"
 echo "📦 Building FRONTEND"
 echo "======================================"
-cd /home/vagrant/project/gitops-helm-argocd-project/src/frontend
+cd /home/vagrant/project/src/frontend
 
-docker build -t $DOCKER_USERNAME/sherlock-logs-frontend:latest .
+docker build -t "$DOCKER_USERNAME/sherlock-logs-frontend:latest" .
 
 # Tag for all environments
-docker tag $DOCKER_USERNAME/sherlock-logs-frontend:latest $DOCKER_USERNAME/sherlock-logs-frontend:dev
-docker tag $DOCKER_USERNAME/sherlock-logs-frontend:latest $DOCKER_USERNAME/sherlock-logs-frontend:staging
-docker tag $DOCKER_USERNAME/sherlock-logs-frontend:latest $DOCKER_USERNAME/sherlock-logs-frontend:prod
+docker tag "$DOCKER_USERNAME/sherlock-logs-frontend:latest" "$DOCKER_USERNAME/sherlock-logs-frontend:dev"
+docker tag "$DOCKER_USERNAME/sherlock-logs-frontend:latest" "$DOCKER_USERNAME/sherlock-logs-frontend:staging"
+docker tag "$DOCKER_USERNAME/sherlock-logs-frontend:latest" "$DOCKER_USERNAME/sherlock-logs-frontend:prod"
 
 echo "🚀 Pushing FRONTEND images..."
-docker push $DOCKER_USERNAME/sherlock-logs-frontend:latest
-docker push $DOCKER_USERNAME/sherlock-logs-frontend:dev
-docker push $DOCKER_USERNAME/sherlock-logs-frontend:staging
-docker push $DOCKER_USERNAME/sherlock-logs-frontend:prod
+docker push "$DOCKER_USERNAME/sherlock-logs-frontend:latest"
+docker push "$DOCKER_USERNAME/sherlock-logs-frontend:dev"
+docker push "$DOCKER_USERNAME/sherlock-logs-frontend:staging"
+docker push "$DOCKER_USERNAME/sherlock-logs-frontend:prod"
 
 echo "======================================"
 echo "📦 Building BACKEND"
 echo "======================================"
-cd /home/vagrant/project/gitops-helm-argocd-project/src/backend
+cd /home/vagrant/project/src/backend
 
-docker build -t $DOCKER_USERNAME/sherlock-logs-backend:latest .
+docker build -t "$DOCKER_USERNAME/sherlock-logs-backend:latest" .
 
 # Tag for all environments
-docker tag $DOCKER_USERNAME/sherlock-logs-backend:latest $DOCKER_USERNAME/sherlock-logs-backend:dev
-docker tag $DOCKER_USERNAME/sherlock-logs-backend:latest $DOCKER_USERNAME/sherlock-logs-backend:staging
-docker tag $DOCKER_USERNAME/sherlock-logs-backend:latest $DOCKER_USERNAME/sherlock-logs-backend:prod
+docker tag "$DOCKER_USERNAME/sherlock-logs-backend:latest" "$DOCKER_USERNAME/sherlock-logs-backend:dev"
+docker tag "$DOCKER_USERNAME/sherlock-logs-backend:latest" "$DOCKER_USERNAME/sherlock-logs-backend:staging"
+docker tag "$DOCKER_USERNAME/sherlock-logs-backend:latest" "$DOCKER_USERNAME/sherlock-logs-backend:prod"
 
 echo "🚀 Pushing BACKEND images..."
-docker push $DOCKER_USERNAME/sherlock-logs-backend:latest
-docker push $DOCKER_USERNAME/sherlock-logs-backend:dev
-docker push $DOCKER_USERNAME/sherlock-logs-backend:staging
-docker push $DOCKER_USERNAME/sherlock-logs-backend:prod
+docker push "$DOCKER_USERNAME/sherlock-logs-backend:latest"
+docker push "$DOCKER_USERNAME/sherlock-logs-backend:dev"
+docker push "$DOCKER_USERNAME/sherlock-logs-backend:staging"
+docker push "$DOCKER_USERNAME/sherlock-logs-backend:prod"
 
 echo "======================================"
 echo "☸️  Updating Helm Values for Dev Environment"
 echo "======================================"
-cd /home/vagrant/project/gitops-helm-argocd-project
+cd /home/vagrant/project
 
 # Update image tags in values files (GitOps friendly)
 sed -i "s|tag: .*|tag: latest|" helm-charts/sherlock-app/values.yaml
@@ -110,6 +115,11 @@ EOF'
 sudo systemctl restart docker
 sudo systemctl restart k3s
 
+echo "⏳ Waiting for K3s API to come back..."
+sleep 10
+
+kubectl wait --for=condition=Ready node/devops --timeout=300s || true
+
 # 3. Test internet connectivity
 ping -c 3 8.8.8.8
 ping -c 3 google.com
@@ -121,8 +131,15 @@ echo "📌 Step 5: Logging into ArgoCD CLI..."
 ADMIN_PASS=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
 echo $ADMIN_PASS
 
+ARGOCD_SERVER="$(printf '%s' "${ARGOCD_SERVER:-192.168.56.10:30080}" | tr -d '\r')"
+if [ -z "$ARGOCD_SERVER" ]; then
+  echo "❌ ARGOCD_SERVER is empty. Set it to something like 192.168.56.10:30080"
+  exit 1
+fi
+export ARGOCD_SERVER
+
 # 2. Login with all recommended flags
-argocd login 192.168.56.10:30080 \
+argocd login "$ARGOCD_SERVER" \
   --username admin \
   --password $ADMIN_PASS \
   --insecure \
@@ -141,37 +158,83 @@ echo "📌 Step 7: Fixing Helm Chart Structure..."
 echo "⚠️  Removing values files from templates directory..."
 rm -f helm-charts/sherlock-app/templates/values-*.yaml
 echo "✅ Values files removed from templates"
-
+cd ..
+cd argocd
 echo "📌 Step 8: Applying All ArgoCD Applications..."
 echo "Applying sherlock-app-dev..."
-kubectl apply -f argocd/applications/sherlock-app-dev.yaml
+kubectl apply -f applications/sherlock-app-dev.yaml
 echo "Applying sherlock-app-staging..."
-kubectl apply -f argocd/applications/sherlock-app-staging.yaml
+kubectl apply -f applications/sherlock-app-staging.yaml
 echo "Applying sherlock-app-prod..."
-kubectl apply -f argocd/applications/sherlock-app-prod.yaml
+kubectl apply -f applications/sherlock-app-prod.yaml
 echo "Applying postgres-dev..."
-kubectl apply -f argocd/applications/postgres-dev.yaml
+kubectl apply -f applications/postgres-dev.yaml
 
-echo "📌 Step 9: Syncing All Environments..."
+echo "📌 Step 9: Syncing and Verifying Database..."
+echo ""
+echo "🔄 Syncing POSTGRES database app..."
+argocd app get postgres --refresh --server "$ARGOCD_SERVER" 
+sleep 5
+argocd app sync postgres --server "$ARGOCD_SERVER"
+argocd app wait postgres --sync --health --timeout 300 --server "$ARGOCD_SERVER" || true
+echo "✅ POSTGRES sync initiated"
+echo ""
+
+echo "⏳ Waiting for PostgreSQL StatefulSet to appear and become ready..."
+for i in $(seq 1 60); do
+  if kubectl get statefulset -n database postgres-postgresql >/dev/null 2>&1; then
+    if kubectl rollout status statefulset/postgres-postgresql -n database --timeout=10s >/dev/null 2>&1; then
+      break
+    fi
+  fi
+  echo "   waiting for PostgreSQL StatefulSet... ($i/60)"
+  sleep 5
+done
+
+if ! kubectl get statefulset -n database postgres-postgresql >/dev/null 2>&1; then
+  echo "❌ PostgreSQL StatefulSet did not appear in time"
+  kubectl get all -n database || true
+  exit 1
+fi
+
+POSTGRES_POD=""
+POSTGRES_POD=$(kubectl get pods -n database -l app.kubernetes.io/instance=postgres,app.kubernetes.io/name=postgresql -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+
+if [ -z "$POSTGRES_POD" ]; then
+  echo "❌ PostgreSQL pod did not appear in time"
+  kubectl get all -n database || true
+  exit 1
+fi
+
+kubectl wait --for=condition=Ready pod -n database "$POSTGRES_POD" --timeout=300s
+
+echo "🔎 Running PostgreSQL verification queries..."
+kubectl exec -n database "$POSTGRES_POD" -- bash -c "PGPASSWORD=postgres psql -U postgres -d sherlock -c 'SELECT 1 AS db_connection_ok;'"
+kubectl exec -n database "$POSTGRES_POD" -- bash -c "PGPASSWORD=postgres psql -U postgres -d sherlock -c 'SELECT current_database() AS db, current_user AS db_user;'"
+kubectl exec -n database "$POSTGRES_POD" -- bash -c "PGPASSWORD=postgres psql -U postgres -d sherlock -c '\\dt'"
+echo "✅ PostgreSQL is reachable and queryable"
+echo ""
+
+echo "📌 Step 10: Syncing All Environments..."
 echo ""
 echo "🔄 Syncing DEV environment..."
-argocd app refresh sherlock-app-dev --hard || true
+argocd app get sherlock-app-dev --refresh --server "$ARGOCD_SERVER"  
 sleep 2
-argocd app sync sherlock-app-dev --force
+argocd app sync sherlock-app-dev --server "$ARGOCD_SERVER" 
 echo "✅ DEV sync initiated"
 echo ""
 
 echo "🔄 Syncing STAGING environment..."
-argocd app refresh sherlock-app-staging --hard || true
+argocd app get sherlock-app-staging --refresh --server "$ARGOCD_SERVER" 
 sleep 2
-argocd app sync sherlock-app-staging --force
+argocd app sync sherlock-app-staging --server "$ARGOCD_SERVER" 
 echo "✅ STAGING sync initiated"
 echo ""
 
 echo "🔄 Syncing PROD environment..."
-argocd app refresh sherlock-app-prod --hard || true
+argocd app get sherlock-app-prod --refresh --server "$ARGOCD_SERVER"  
 sleep 2
-argocd app sync sherlock-app-prod --force
+argocd app sync sherlock-app-prod --server "$ARGOCD_SERVER" 
 echo "✅ PROD sync initiated"
 echo ""
 
@@ -192,10 +255,10 @@ kubectl wait --for=condition=Ready pod -n prod -l app=frontend --timeout=300s ||
 kubectl wait --for=condition=Ready pod -n prod -l app=backend --timeout=300s || true
 echo ""
 
-echo "📌 Step 10: Verifying Deployment Status..."
+echo "📌 Step 11: Verifying Deployment Status..."
 echo ""
 echo "ArgoCD Applications Status:"
-argocd app list
+argocd app list --server "$ARGOCD_SERVER"
 echo ""
 
 echo "DEV Environment Resources:"
@@ -210,6 +273,23 @@ echo "PROD Environment Resources:"
 kubectl get all -n prod
 echo ""
 
+echo "Database Environment Resources:"
+kubectl get all -n database
+echo ""
+echo "dev logs"
+argocd app get sherlock-app-dev
+echo "staging logs"
+argocd app get sherlock-app-staging
+echo "production logs"
+argocd app get sherlock-app-prod
+
+echo "rolling out the environemnts"
+kubectl rollout status deployment/frontend -n dev
+kubectl rollout status deployment/frontend -n staging
+kubectl rollout status deployment/frontend -n prod
+
+echo "sleep for 60 sec"
+sleep 60
 echo "=================================================="
 echo "🎉 SETUP COMPLETED SUCCESSFULLY!"
 echo "=================================================="
@@ -218,6 +298,7 @@ echo "📊 Deployment Summary:"
 echo "   ✅ ArgoCD installed and configured"
 echo "   ✅ DNS issue fixed (ndots:1)"
 echo "   ✅ Helm chart structure corrected"
+echo "   ✅ PostgreSQL synced and query checks passed"
 echo "   ✅ All 3 environments synced (dev, staging, prod)"
 echo ""
 echo "🔗 Useful Commands:"
@@ -228,6 +309,8 @@ echo "   argocd app get sherlock-app-prod             # Check prod app status"
 echo "   kubectl get all -n dev                       # View dev resources"
 echo "   kubectl get all -n staging                   # View staging resources"
 echo "   kubectl get all -n prod                      # View prod resources"
+echo "   kubectl get all -n database                  # View database resources"
+echo "   kubectl exec -n database \$POSTGRES_POD -- bash -c 'PGPASSWORD=postgres psql -U postgres -d sherlock -c ""SELECT 1;""'"
 echo "   kubectl logs -n argocd deployment/argocd-repo-server  # Debug repo-server"
 echo ""
 echo "🌐 ArgoCD UI: https://192.168.56.10:30080"
