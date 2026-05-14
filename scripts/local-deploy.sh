@@ -157,10 +157,14 @@ echo "📌 Step 7: Fixing Helm Chart Structure..."
 echo "⚠️  Removing values files from templates directory..."
 rm -f helm-charts/sherlock-app/templates/values-*.yaml
 echo "✅ Values files removed from templates"
+dir=$(pwd)
+echo "Current directory: $dir"
 
-pwd
-cd ..
+
+
 echo "going inside argocd"
+dir=$(pwd)
+echo "Current directory: $dir"
 cd argocd
 echo "📌 Step 8: Applying All ArgoCD Applications..."
 echo "Applying sherlock-app-dev..."
