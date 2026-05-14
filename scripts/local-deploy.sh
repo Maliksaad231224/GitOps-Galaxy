@@ -145,7 +145,6 @@ argocd login "$ARGOCD_SERVER" \
   --insecure \
   --grpc-web \
   --skip-test-tls
-cd ..
 
 echo "📌 Step 6: Fixing DNS Issue (ndots:1 for repo-server)..."
 echo "⚠️  Fixing DNS resolution issue in ArgoCD repo-server..."
@@ -159,6 +158,9 @@ echo "⚠️  Removing values files from templates directory..."
 rm -f helm-charts/sherlock-app/templates/values-*.yaml
 echo "✅ Values files removed from templates"
 
+pwd
+cd ..
+echo "going inside argocd"
 cd argocd
 echo "📌 Step 8: Applying All ArgoCD Applications..."
 echo "Applying sherlock-app-dev..."
@@ -267,3 +269,5 @@ echo "   # To manually sync an app:"
 echo "   argocd app sync sherlock-app-dev --force"
 echo ""
 echo "=================================================="
+cd ..
+cd scripts
