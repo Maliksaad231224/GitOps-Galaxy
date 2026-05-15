@@ -1,0 +1,358 @@
+GitOps Galaxy 
+�
+�
+ 
+The situation 
+�
+�
+ 
+As the startup's user base and feature set continue to expand, the engineering team realizes 
+that managing the growing number of Kubernetes manifests and ensuring consistent 
+deployments across multiple environments has become increasingly complex and 
+time-consuming. To address these challenges and enable the company to scale more efficiently, 
+the team decides to explore modern, industry-leading tools that can streamline their Kubernetes 
+workflow and provide greater automation, consistency, and scalability. 
+Tools like ArgoCD and Helm have become essential in the Kubernetes ecosystem, helping 
+organizations manage their applications and infrastructure more effectively. ArgoCD is a 
+declarative, GitOps-based continuous delivery tool that ensures the desired state of the 
+application is always in sync with the actual state running in the cluster. Helm, on the other 
+hand, is a package manager for Kubernetes that simplifies the deployment and management of 
+applications by bundling all the necessary Kubernetes manifests into a single, reusable package 
+called a chart. 
+Functional requirements 
+�
+�
+ 
+Helm 
+Deploy a Database with a Pre-existing Helm Chart: Leverage existing Helm charts to quickly 
+deploy and manage applications in Kubernetes. 
+Choose a database (e.g., PostgreSQL, MySQL) and deploy it using an existing Helm chart. 
+Ensure that the database deployment includes persistent storage to retain data across pod 
+restarts and updates. 
+Create a custom Kubernetes job script to connect to the database and test its functionality, 
+ensuring the database is operational and ready for future use. 
+Create a Helm Chart for Your Application: Making your own charts allows for more control and 
+customization over your application's deployment. 
+Develop a Helm chart for your application, which includes both backend and frontend 
+components. 
+The Helm chart should bundle all necessary Kubernetes manifests (Deployments, Services, 
+ConfigMaps, etc.) for your application. 
+Ensure that the Helm chart allows for easy configuration and customization of deployment 
+parameters, such as image versions, resource limits, and environment variables. 
+Utilize Helm's built-in templating features to create configurable and reusable charts, allowing 
+for easy customization of deployment parameters across different environments. 
+ArgoCD 
+Deploy and Configure ArgoCD: Set up ArgoCD (using Helm, of course) in your Kubernetes 
+cluster to enable GitOps-based continuous delivery. 
+Access the ArgoCD interface (either through the UI or CLI, based on your preference). 
+Connect your Git repository containing Kubernetes manifests to ArgoCD. 
+Configure RBAC for ArgoCD to ensure it has the necessary permissions to manage resources 
+in the cluster. 
+Add Your Application to ArgoCD: Configure ArgoCD to manage your application, ensuring it 
+maintains the desired state as defined in your Git repository. 
+Create an Application resource in ArgoCD that points to your Git repository. 
+Configure sync options to: 
+Ensure resources no longer defined in the Git repository are deleted only after all new resources 
+have been successfully deployed. 
+Update only those resources that are out of sync. 
+Respect any specified fields that should be ignored during synchronization. 
+Ensure continuous reconciliation, automatically correcting any drift between the desired state in 
+Git and the actual state in the cluster. 
+Implement ArgoCD Image Updater: Enhance your GitOps workflow by automatically updating 
+container images in your Kubernetes manifests. 
+Install and configure ArgoCD Image Updater in your cluster. 
+Create a local user in ArgoCD and grant the necessary RBAC permissions (read, update, and 
+assign the image-updater role). 
+Configure the Image Updater to use the Git write-back method with semantic versioning tracking 
+patches. 
+Apply the Image Updater configuration to your application, allowing it to automatically update 
+image versions in your Git repository. 
+CI/CD 
+Configure GitOps with ArgoCD: Set up your CI/CD pipeline to push Kubernetes manifests to a 
+Git repository monitored by ArgoCD. Ensure that your pipeline commits changes to the 
+repository, triggering ArgoCD to sync and apply the updates to the cluster. 
+Manage ArgoCD Applications: Include steps in your pipeline to create or update ArgoCD 
+Application resources, ensuring that ArgoCD is aware of and managing the desired state of your 
+applications. 
+Automate Sync and Monitoring: Ensure your pipeline can trigger ArgoCD syncs and monitor the 
+status of applications, ensuring they reach the desired state. Your pipeline should be able to 
+handle rollbacks and other corrective actions if deployments do not succeed. 
+Important Considerations 
+❗
+ 
+Use namespaces to logically separate different components of your application and improve 
+resource organization. 
+Implement proper secret management techniques to securely handle sensitive information. 
+Set resource quotas on namespaces to prevent resource exhaustion and ensure fair resource 
+allocation. 
+Implement rollback strategies ensuring that your application can revert to a previous stable state 
+in case of deployment failures or issues. 
+Expected Outcome 
+�
+�
+ 
+By the end of this project, you should have successfully: 
+Deployed a database using a pre-existing Helm chart and created a custom Helm chart for your 
+application. 
+Set up ArgoCD to manage your application deployments using GitOps principles. 
+Implemented ArgoCD Image Updater to automate image updates in your deployments. 
+Configured proper RBAC, namespaces, and security measures for your Kubernetes 
+environment. 
+Integrated ArgoCD into your CI/CD pipeline to automate deployments, syncs, and monitoring, 
+ensuring a reliable and efficient continuous delivery process. 
+Demonstrated the ability to manage and update your application using Helm and ArgoCD, 
+showcasing a fully functional GitOps workflow. 
+Extra requirements 
+�
+�
+ 
+Integrate External Secret Management 
+Securely manage sensitive information such as API keys and database credentials using an 
+external secret management tool. 
+Integrate HashiCorp Vault or another secret management solution with Helm and ArgoCD, 
+ensuring that your Helm charts and ArgoCD applications reference secrets securely. 
+Multi-Environment Setup 
+Create a multi-environment setup to manage different stages of the application lifecycle, such as 
+development, staging, and production. 
+Use namespaces to create distinct environments for development, staging, and production. 
+Use Helm values files to manage differences between environments. 
+Extend the CI/CD pipeline to handle deployments to multiple environments, ensuring that 
+changes are tested in staging before reaching production. 
+Bonus functionality 
+�
+�
+ 
+You're welcome to implement other bonuses as you see fit. But anything you implement must 
+not change the default functional behavior of your project. 
+You may use additional feature flags, command line arguments or separate builds to switch your 
+bonus functionality on. 
+Useful Links 
+�
+�
+ 
+Kubernetes Secret Management 
+What is a Helm Chart? 
+Advanced Image Management 
+Kubernetes – Namespaces 
+Rolling Back Kubernetes Deployments with Argo CD 
+What you'll learn 
+�
+�
+ 
+Leveraging Helm for efficient application deployment, including using pre-existing charts and 
+creating custom charts with built-in templating features. 
+Implementing GitOps principles using ArgoCD for continuous delivery and automated 
+synchronization of application states. 
+Configuring and managing Role-Based Access Control (RBAC) in a Kubernetes environment to 
+ensure proper permissions and security. 
+Setting up and utilizing ArgoCD Image Updater to automate container image updates in 
+Kubernetes manifests. 
+Deliverables and Review Requirements 
+�
+�
+ 
+All source code and configuration files 
+A README file with: 
+Project overview 
+Setup and installation instructions 
+Usage guide 
+Any additional features or bonus functionality implemented 
+During the review, be prepared to: 
+Demonstrate the use of Helm and ArgoCD, following best practices and GitOps workflow 
+Explain your code and design choices 
+Discuss any challenges you faced and how you overcame them 
+
+Page 1
+
+The student can explain how Helm simplifies Kubernetes application deployments by using charts to bundle multiple Kubernetes manifests into a single package.
+
+The student can explain why Helm improves productivity, reduces the complexity in deployments, and enhances scalability.
+
+The student can explain the structure of a Helm chart, including the use of templates and values files for configuration.
+
+The student can explain how ArgoCD implements GitOps principles by using Git as the single source of truth.
+
+Page 2
+
+The database is successfully deployed using a pre-existing Helm chart.
+
+Verify the database deployment status and check that all pods are running correctly.
+
+A Kubernetes job exists and successfully connects to the deployed database.
+
+Verify the job execution log shows successful connection and completion of basic database operations.
+
+Database persistence is properly configured and functional.
+
+Verify data persistence by:
+
+Insert test data
+Delete the database pod
+Confirm data exists after restart
+Page 3
+
+The Helm chart correctly applies customization through values files.
+
+Verify deployment with different values.yaml configurations:
+
+Change image versions
+Modify resource limits
+Update environment variables
+
+Confirm changes are applied correctly.
+
+Helm rollback functionality is properly implemented and functional.
+
+Verify rollback functionality:
+
+Deploy a broken version
+Execute rollback
+Confirm application returns to previous stable state
+
+The student can explain Helm lifecycle hooks and their usage.
+
+Page 4
+
+The student can explain the methods for testing Helm charts, including the use of Helm test hooks and the helm test command.
+
+ArgoCD is successfully installed and operational in the Kubernetes cluster.
+
+Verify:
+
+ArgoCD UI is accessible
+All ArgoCD components show healthy status
+CLI functionality is operational
+
+The student can explain the architecture of ArgoCD, including its components such as:
+
+API server
+Repository server
+Application controller
+UI
+
+Git repository integration is properly configured.
+
+Page 5
+
+Application tracking in ArgoCD is properly configured and functional.
+
+Verify in ArgoCD UI/CLI:
+
+Application status shows as synced
+Health status is good
+Git state matches cluster state
+
+The student can explain how to create and manage applications in ArgoCD, including the use of Application CRD.
+
+The student can explain how to navigate and use the ArgoCD UI/CLI for monitoring and management operations.
+
+RBAC configuration follows least privilege principle.
+
+Verify RBAC policies:
+
+Users have appropriate permissions only
+Page 6
+
+Sync options are configured to handle resource deletion safely.
+
+Verify:
+
+Remove a resource from Git
+Confirm new resources deploy first
+Verify deleted resource is removed only after successful deployment
+
+Continuous reconciliation is properly configured and functional.
+
+Verify drift detection:
+
+Make a manual change in cluster
+Confirm ArgoCD detects the drift
+Verify automatic correction occurs
+
+ArgoCD Image Updater is installed and operational.
+
+Verify:
+
+Image Updater pods are running
+Logs show update activity
+Page 7
+
+Image Updater Git write-back method is properly configured for patch updates.
+
+Verify:
+
+Push image v1.0.1 to registry
+Confirm Git repository is updated
+Verify cluster sync with new image
+
+Image Updater correctly ignores minor and major updates.
+
+Verify:
+
+Push image v1.1.0 and v2.0.0 to registry
+Confirm Git repository remains unchanged
+Verify cluster maintains current version
+
+CI/CD pipeline successfully manages the complete deployment workflow.
+
+Verify end-to-end workflow:
+
+Code change triggers deployment pipeline
+Page 8
+
+ArgoCD Application resource management is integrated into the CI/CD pipeline.
+
+Verify pipeline can create/update ArgoCD Application resources correctly.
+
+Rollback mechanism is properly implemented and functional.
+
+Verify:
+
+Deploy a broken version
+Confirm pipeline detects failure
+Verify automatic rollback to previous stable version
+
+Documentation includes all required components.
+
+Verify presence of:
+
+Complete project overview
+Detailed setup instructions
+Comprehensive usage guide
+Page 9
+
+Helm charts adhere to best practices.
+
+Verify:
+
+Chart.yaml exists and is properly configured
+values.yaml contains all configurable parameters
+Templates follow naming conventions
+Directory structure matches Helm standards
+
+Code meets quality standards.
+
+Verify:
+
+Proper commenting
+Consistent formatting
+Following language-specific best practices
+Page 10
+
+The student can explain the benefits of external secret management over Kubernetes Secrets.
+
+External secret management integration is properly configured and functional.
+
+Verify:
+
+Secrets are stored in external system
+Kubernetes successfully retrieves secrets
+Authentication method is properly configured
+
+Multi-environment CI/CD pipeline is properly configured and functional.
+
+Verify:
+
+Each environment has isolated namespace
+Environment-specific configs are correctly applied
+Deployments are independent across environments

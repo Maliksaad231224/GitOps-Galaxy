@@ -23,5 +23,8 @@ dir=$(pwd)
 echo "Current directory: $dir"
 ./local-deploy.sh
 dir=$(pwd)
+cd ..
+cd scripts
 echo "Current directory: $dir"
-./database
+./post-local-deploy.sh || true
+./database.sh

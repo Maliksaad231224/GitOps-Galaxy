@@ -175,28 +175,63 @@ echo "Applying sherlock-app-prod..."
 kubectl apply -f applications/sherlock-app-prod.yaml
 echo "Applying postgres-dev..."
 kubectl apply -f applications/postgres-dev.yaml
-
 echo "📌 Step 10: Syncing All Environments..."
 echo ""
-echo "🔄 Syncing DEV environment..."
-argocd app get sherlock-app-dev --refresh --server "$ARGOCD_SERVER"  
-sleep 2
-argocd app sync sherlock-app-dev --server "$ARGOCD_SERVER" 
-echo "✅ DEV sync initiated"
-echo ""
 
-echo "🔄 Syncing STAGING environment..."
-argocd app get sherlock-app-staging --refresh --server "$ARGOCD_SERVER" 
-sleep 2
-argocd app sync sherlock-app-staging --server "$ARGOCD_SERVER" 
-echo "✅ STAGING sync initiated"
-echo ""
+# Helper: sync an app with retries and diagnostics on failure
+sync_app() {
+  local app="$1"
+  local ns="$2"
+  local attempts=3
+  local wait_timeout=1200
+  local attempt=1
 
-echo "🔄 Syncing PROD environment..."
-argocd app get sherlock-app-prod --refresh --server "$ARGOCD_SERVER"  
-sleep 2
-argocd app sync sherlock-app-prod --server "$ARGOCD_SERVER" 
-echo "✅ PROD sync initiated"
+  echo "🔄 Syncing ${app} (namespace=${ns})..."
+  while [ $attempt -le $attempts ]; do
+    echo "Attempt ${attempt}/${attempts}: sync ${app}"
+    if argocd app sync "$app" --server "$ARGOCD_SERVER"; then
+      echo "Waiting up to ${wait_timeout}s for ${app} to reach healthy/synced"
+      if argocd app wait "$app" --health --sync --timeout $wait_timeout --server "$ARGOCD_SERVER"; then
+        echo "✅ ${app} sync completed"
+        return 0
+      else
+        echo "warning: ${app} did not reach desired state within ${wait_timeout}s"
+      fi
+    else
+      echo "warning: argocd app sync command failed for ${app}"
+    fi
+
+    # collect lightweight diagnostics for this attempt
+    ts=$(date -u +%Y%m%dT%H%M%SZ)
+    diagfile="/tmp/argocd-${app}-diag-${ts}.log"
+    echo "Collecting diagnostics to ${diagfile}"
+    {
+      echo "--- argocd app get ${app} ---"
+      argocd app get "$app" --server "$ARGOCD_SERVER" || true
+      echo "--- argocd app diff ${app} ---"
+      argocd app diff "$app" --server "$ARGOCD_SERVER" || true
+      echo "--- kubectl get pods -n ${ns} ---"
+      kubectl get pods -n "$ns" -o wide || true
+      echo "--- kubectl get events -n ${ns} (last 100) ---"
+      kubectl get events -n "$ns" --sort-by='.lastTimestamp' | tail -n 100 || true
+    } > "$diagfile" 2>&1 || true
+
+    attempt=$((attempt + 1))
+    if [ $attempt -le $attempts ]; then
+      echo "Retrying ${app} in 60s..."
+      sleep 60
+    fi
+  done
+
+  echo "ERROR: ${app} failed to reach desired state after ${attempts} attempts. See latest diagnostics: ${diagfile}"
+  return 1
+}
+
+sync_app sherlock-app-dev dev || true
+echo ""
+sync_app sherlock-app-staging staging || true
+echo ""
+sync_app sherlock-app-prod prod || true
 echo ""
 
 echo "📌 Step 11: Verifying Deployment Status..."
