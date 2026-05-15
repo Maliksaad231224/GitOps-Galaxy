@@ -6,7 +6,6 @@ metadata:
 spec:
   project: default
   source:
-    # Replace this with your repository URL where this repo lives
     repoURL: 'https://github.com/Maliksaad231224/gitops-galaxy.git'
     path: argocd/image-updater
     targetRevision: HEAD

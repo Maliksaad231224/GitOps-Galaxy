@@ -50,54 +50,34 @@ kubectl wait --for=condition=Available deployment/external-secrets -n external-s
 sleep 10
 echo "✅ External-secrets operator is ready"
 
-echo "Creating placeholder secret for argocd-image-updater (token based auth)"
-kubectl create secret generic argocd-image-updater-secret -n argocd-image-updater --from-literal=token="" --dry-run=client -o yaml | kubectl apply -f -
-
-echo "NOTE: You must populate 'argocd-image-updater-secret' with a valid ArgoCD API token or configure the image-updater to use SSH/Git credentials. Example to set token:"
-echo "kubectl -n argocd-image-updater create secret generic argocd-image-updater-secret --from-literal=token=YOUR_TOKEN --dry-run=client -o yaml | kubectl apply -f -"
+if [[ -n "${ARGOCD_TOKEN:-}" ]]; then
+  echo "Creating argocd-image-updater-secret from ARGOCD_TOKEN"
+  kubectl -n argocd-image-updater create secret generic argocd-image-updater-secret --from-literal=token="$ARGOCD_TOKEN" --dry-run=client -o yaml | kubectl apply -f -
+elif [[ -n "${ARGOCD_TOKEN_FILE:-}" && -f "${ARGOCD_TOKEN_FILE}" ]]; then
+  echo "Creating argocd-image-updater-secret from ARGOCD_TOKEN_FILE"
+  ARGOCD_TOKEN_VALUE="$(<"${ARGOCD_TOKEN_FILE}")"
+  kubectl -n argocd-image-updater create secret generic argocd-image-updater-secret --from-literal=token="$ARGOCD_TOKEN_VALUE" --dry-run=client -o yaml | kubectl apply -f -
+else
+  echo "⚠️  ARGOCD_TOKEN or ARGOCD_TOKEN_FILE not set; skipping argocd-image-updater-secret creation."
+  echo "    Set one of them before running this script to apply a real ArgoCD API token."
+fi
 
 echo "Setting up RBAC reminder: Created minimal ClusterRole and binding for image-updater. Review and tighten to least privilege as needed."
 
-echo "Creating an example ExternalSecret (placeholder). You must configure a SecretStore for your provider (Vault/AWS/etc.)."
-
-# Write ExternalSecret to temp file for safer handling
-EXTERNAL_SECRET_FILE=$(mktemp)
-cat > "$EXTERNAL_SECRET_FILE" <<'EOF'
-apiVersion: external-secrets.io/v1beta1
-kind: ExternalSecret
-metadata:
-  name: example-db-credentials
-  namespace: argocd-image-updater
-spec:
-  refreshInterval: 1h
-  secretStoreRef:
-    name: placeholder-store
-    kind: SecretStore
-  target:
-    name: example-db-secret
-  data:
-    - secretKey: username
-      remoteRef:
-        key: example/db/username
-    - secretKey: password
-      remoteRef:
-        key: example/db/password
-EOF
-
-# Try to apply, with retry
-if ! kubectl apply -f "$EXTERNAL_SECRET_FILE" 2>/dev/null; then
-  echo "⚠️  Failed to create ExternalSecret on first attempt. Retrying in 15 seconds..."
-  sleep 15
-  if ! kubectl apply -f "$EXTERNAL_SECRET_FILE" 2>/dev/null; then
-    echo "⚠️  ExternalSecret creation failed. The operator may still be initializing."
-    echo "    You can manually apply it later with: kubectl apply -f \"$EXTERNAL_SECRET_FILE\""
-  fi
+if [[ -n "${EXTERNAL_SECRETSTORE_FILE:-}" && -f "${EXTERNAL_SECRETSTORE_FILE}" ]]; then
+  echo "Applying SecretStore from EXTERNAL_SECRETSTORE_FILE"
+  kubectl apply -f "$EXTERNAL_SECRETSTORE_FILE"
+else
+  echo "⚠️  EXTERNAL_SECRETSTORE_FILE not set; skipping SecretStore creation."
+  echo "    Provide a real SecretStore manifest for your backend (Vault/AWS/GCP/etc.) and rerun the script."
 fi
 
-rm -f "$EXTERNAL_SECRET_FILE"
+if [[ -n "${EXTERNAL_SECRET_FILE:-}" && -f "${EXTERNAL_SECRET_FILE}" ]]; then
+  echo "Applying ExternalSecret from EXTERNAL_SECRET_FILE"
+  kubectl apply -f "$EXTERNAL_SECRET_FILE"
+else
+  echo "⚠️  EXTERNAL_SECRET_FILE not set; skipping ExternalSecret creation."
+  echo "    Provide an ExternalSecret manifest that references your real SecretStore and rerun the script."
+fi
 
-echo "✅ Image Updater and ExternalSecrets setup applied (placeholders)."
-echo "Next steps:"
-echo " - Replace repo URL in argocd/application-image-updater.yaml with your repo URL and apply it to ArgoCD."
-echo " - Populate 'argocd-image-updater-secret' with a valid ArgoCD token or configure Git credentials for write-back."
-echo " - Configure a real SecretStore for ExternalSecrets and create ExternalSecret resources for your secrets."
+echo "✅ Image Updater and ExternalSecrets setup applied."
