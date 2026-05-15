@@ -19,6 +19,8 @@ helm repo add bitnami https://charts.bitnami.com/bitnami
 helm repo add argo https://argoproj.github.io/argo-helm
 helm repo update
 ./permissions.sh
+echo "Running Database"
+./database.sh
 dir=$(pwd)
 echo "Current directory: $dir"
 ./local-deploy.sh
@@ -27,4 +29,3 @@ cd ..
 cd scripts
 echo "Current directory: $dir"
 ./post-local-deploy.sh || true
-./database.sh

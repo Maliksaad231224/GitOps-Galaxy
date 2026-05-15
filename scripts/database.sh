@@ -5,6 +5,49 @@ set -e
 # Database Setup — Bitnami PostgreSQL via Helm
 # ============================================================
 
+# Pre-flight checks
+echo "======================================"
+echo "🔍 Pre-flight Checks"
+echo "======================================"
+
+echo "Checking kubectl connection..."
+if ! kubectl cluster-info >/dev/null 2>&1; then
+  echo "❌ ERROR: Cannot connect to Kubernetes cluster"
+  exit 1
+fi
+echo "✓ kubectl is connected"
+
+echo "Checking cluster node status..."
+nodes=$(kubectl get nodes -o jsonpath='{.items[*].metadata.name}')
+if [ -z "$nodes" ]; then
+  echo "❌ ERROR: No nodes found in cluster"
+  exit 1
+fi
+echo "✓ Cluster has nodes: $nodes"
+
+echo "Checking Helm..."
+if ! helm version >/dev/null 2>&1; then
+  echo "❌ ERROR: Helm is not available"
+  exit 1
+fi
+echo "✓ Helm is available"
+
+echo "Pre-pulling test job image (postgres:15-alpine)..."
+if command -v crictl >/dev/null 2>&1; then
+  # K3s environment with containerd
+  echo "  Attempting to pre-pull image via crictl..."
+  crictl pull postgres:15-alpine 2>/dev/null || echo "  (pre-pull optional, will attempt during pod creation)"
+elif command -v docker >/dev/null 2>&1; then
+  # Docker environment
+  echo "  Attempting to pre-pull image via docker..."
+  docker pull postgres:15-alpine 2>/dev/null || echo "  (pre-pull optional, will attempt during pod creation)"
+else
+  echo "  (no container CLI found, image will be pulled during pod creation)"
+fi
+
+echo "✓ Pre-flight checks complete"
+echo ""
+
 # Add the Bitnami repo (idempotent)
 helm repo add bitnami https://charts.bitnami.com/bitnami > /dev/null 2>&1 || true
 helm repo update > /dev/null 2>&1
@@ -74,29 +117,55 @@ fi
 
 echo "Monitoring pod $pod_name for startup issues..."
 start_ts=$(date +%s)
-max_wait_for_start=120
+max_wait_for_start=240  # increased from 120 to 240 seconds for image pull
 while true; do
   phase=$(kubectl get pod "$pod_name" -n db-layer -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
   container_state_reason=$(kubectl get pod "$pod_name" -n db-layer -o jsonpath='{.status.containerStatuses[0].state.waiting.reason}' 2>/dev/null || echo "")
+  container_state_msg=$(kubectl get pod "$pod_name" -n db-layer -o jsonpath='{.status.containerStatuses[0].state.waiting.message}' 2>/dev/null || echo "")
+  
   if [ "$phase" = "Running" ] || [ "$phase" = "Succeeded" ] || [ "$phase" = "Failed" ]; then
     echo "Pod $pod_name phase: $phase"
     break
   fi
+  
   now=$(date +%s)
   elapsed=$((now - start_ts))
+  
+  # Print progress every 30 seconds if still waiting
+  if [ $((elapsed % 30)) -eq 0 ] && [ $elapsed -gt 0 ]; then
+    echo "⏳ Still waiting for pod startup (${elapsed}s elapsed)... Phase: $phase, Reason: $container_state_reason"
+    if [ -n "$container_state_msg" ]; then
+      echo "   Message: $container_state_msg"
+    fi
+  fi
+  
   if [ $elapsed -gt $max_wait_for_start ]; then
-    echo "ERROR: pod $pod_name still in phase '$phase' after ${elapsed}s; reason: ${container_state_reason}"
-    echo "--- kubectl describe pod $pod_name -n db-layer ---"
+    echo "❌ ERROR: pod $pod_name stuck in phase '$phase' after ${elapsed}s"
+    echo "   Reason: $container_state_reason"
+    if [ -n "$container_state_msg" ]; then
+      echo "   Message: $container_state_msg"
+    fi
+    echo ""
+    echo "📋 --- Detailed Pod Description ---"
     kubectl describe pod "$pod_name" -n db-layer || true
-    echo "--- Recent events (db-layer) ---"
+    echo ""
+    echo "📋 --- Recent Events (db-layer namespace) ---"
     kubectl get events -n db-layer --sort-by='.lastTimestamp' | tail -n 100 || true
-    echo "--- Pod logs (if any) ---"
-    kubectl logs "$pod_name" -n db-layer --all-containers || true
+    echo ""
+    echo "📋 --- Pod Status ---"
+    kubectl get pod "$pod_name" -n db-layer -o yaml || true
+    echo ""
+    echo "⚠️  Troubleshooting tips:"
+    echo "   1. If stuck in 'ContainerCreating': Check image pull (docker pull postgres:15-alpine)"
+    echo "   2. Check node resources: kubectl top nodes"
+    echo "   3. Check node disk space: kubectl describe nodes"
+    echo "   4. Review pod events: kubectl get events -n db-layer -w"
     exit 1
   fi
   sleep 3
 done
 
+echo "✅ Pod $pod_name is ready"
 echo "Waiting for db-test-ping job to complete..."
 kubectl wait --for=condition=complete job/db-test-ping -n db-layer --timeout=300s || {
   echo "ERROR: job/db-test-ping did not complete within timeout"
@@ -127,13 +196,28 @@ if [ -z "$DB_POD" ]; then
 fi
 echo "Found PostgreSQL pod: $DB_POD"
 
-# Get PostgreSQL password from secret
-PG_PASSWORD=$(kubectl get secret my-db-postgresql -n db-layer -o jsonpath='{.data.postgres-password}' | base64 -d)
+# Get PostgreSQL password from secret using the first available key
+PG_PASSWORD=""
+for secret_key in postgres-password postgresql-password password; do
+  PG_PASSWORD=$(kubectl get secret my-db-postgresql -n db-layer -o "jsonpath={.data.${secret_key}}" 2>/dev/null | base64 -d 2>/dev/null || true)
+  if [ -n "$PG_PASSWORD" ]; then
+    break
+  fi
+done
+
+if [ -z "$PG_PASSWORD" ]; then
+  echo "ERROR: Could not read PostgreSQL password from secret my-db-postgresql"
+  kubectl get secret my-db-postgresql -n db-layer -o yaml || true
+  exit 1
+fi
 
 # Step 1: Insert test data
 echo ""
 echo "Step 1️⃣ : Inserting test data into database..."
-kubectl exec -it "$DB_POD" -n db-layer -- psql -U postgres -d startup_db -c "
+kubectl exec -i "$DB_POD" -n db-layer -- env PGPASSWORD="$PG_PASSWORD" psql -U postgres -d startup_db <<'SQL' || {
+  echo "ERROR: Failed to insert test data"
+  exit 1
+}
 CREATE TABLE IF NOT EXISTS persistence_test (
   id SERIAL PRIMARY KEY,
   test_name VARCHAR(255),
@@ -141,10 +225,8 @@ CREATE TABLE IF NOT EXISTS persistence_test (
 );
 
 INSERT INTO persistence_test (test_name) VALUES ('test_data_before_restart');
-SELECT * FROM persistence_test;" || {
-  echo "ERROR: Failed to insert test data"
-  exit 1
-}
+SELECT * FROM persistence_test;
+SQL
 echo "✅ Test data inserted successfully"
 
 # Step 2: Delete the database pod
@@ -197,7 +279,7 @@ echo "Step 4️⃣ : Verifying data persistence after restart..."
 echo "Querying test data from restarted database..."
 
 # Query the data and capture output
-QUERY_OUTPUT=$(kubectl exec "$NEW_DB_POD" -n db-layer -- psql -U postgres -d startup_db -c "SELECT * FROM persistence_test;" 2>&1)
+QUERY_OUTPUT=$(kubectl exec -i "$NEW_DB_POD" -n db-layer -- env PGPASSWORD="$PG_PASSWORD" psql -U postgres -d startup_db -c "SELECT * FROM persistence_test;" 2>&1)
 echo "Query output:"
 echo "$QUERY_OUTPUT"
 
@@ -214,7 +296,7 @@ fi
 # Cleanup test table
 echo ""
 echo "🧹 Cleaning up test table..."
-kubectl exec "$NEW_DB_POD" -n db-layer -- psql -U postgres -d startup_db -c "DROP TABLE persistence_test;" || true
+kubectl exec -i "$NEW_DB_POD" -n db-layer -- env PGPASSWORD="$PG_PASSWORD" psql -U postgres -d startup_db -c "DROP TABLE persistence_test;" || true
 
 echo ""
 echo "======================================"

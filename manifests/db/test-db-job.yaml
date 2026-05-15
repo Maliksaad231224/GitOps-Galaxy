@@ -9,40 +9,89 @@ spec:
       name: db-test-ping
     spec:
       restartPolicy: Never
+      serviceAccountName: default
       containers:
         - name: psql
-          image: postgres:15
+          image: postgres:15-alpine
           imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
           env:
             - name: PGPASSWORD
               valueFrom:
                 secretKeyRef:
                   name: my-db-postgresql
                   key: postgres-password
-            - name: PGPASSWORD_ALT
-              valueFrom:
-                secretKeyRef:
-                  name: my-db-postgresql
-                  key: postgresql-password
-                  optional: true
             - name: PGHOST
               value: my-db-postgresql
             - name: PGUSER
               value: postgres
             - name: PGDATABASE
               value: startup_db
+            - name: PGPORT
+              value: "5432"
           command:
-            - sh
+            - /bin/sh
             - -c
             - |
               set -e
-              # Prefer primary secret key, fall back to alternate key if present
-              PGPASS=${PGPASSWORD:-$PGPASSWORD_ALT}
-              export PGPASSWORD="$PGPASS"
-              echo "Waiting for PostgreSQL to be ready..."
-              until pg_isready -h "$PGHOST" -p 5432 -U "$PGUSER" -d "$PGDATABASE" >/dev/null 2>&1; do
+              echo "Database Connectivity Test"
+              echo "============================"
+              echo "Host: $PGHOST:$PGPORT"
+              echo "User: $PGUSER"
+              echo "Database: $PGDATABASE"
+              echo ""
+              echo "Waiting for PostgreSQL to be ready (max 120s)..."
+              timeout=120
+              elapsed=0
+              while ! pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" 2>/dev/null; do
+                elapsed=$((elapsed + 1))
+                if [ $elapsed -ge $timeout ]; then
+                  echo "ERROR: PostgreSQL did not respond within ${timeout}s"
+                  echo "Debugging info:"
+                  echo "- Checking DNS resolution..."
+                  nslookup "$PGHOST" || echo "  DNS lookup failed"
+                  echo "- Checking network connectivity..."
+                  timeout 5 nc -zv "$PGHOST" "$PGPORT" || echo "  Network connection failed"
+                  exit 1
+                fi
                 sleep 2
               done
-              echo "Postgres is ready — running test query"
-              psql -h "$PGHOST" -U "$PGUSER" -d "$PGDATABASE" -c "SELECT 1;"
+              
+              echo "✓ PostgreSQL is ready"
+              echo ""
+              echo "Running connectivity test..."
+              psql -h "$PGHOST" -U "$PGUSER" -d "$PGDATABASE" -c "SELECT 1 as connection_test;"
+              
+              echo ""
+              echo "Running basic operations test..."
+              psql -h "$PGHOST" -U "$PGUSER" -d "$PGDATABASE" << 'EOF'
+              -- Test: Create table
+              CREATE TABLE IF NOT EXISTS connectivity_test (
+                id SERIAL PRIMARY KEY,
+                test_name VARCHAR(255),
+                created_at TIMESTAMP DEFAULT NOW()
+              );
+              
+              -- Test: Insert data
+              INSERT INTO connectivity_test (test_name) VALUES ('initial_test');
+              
+              -- Test: Select data
+              SELECT COUNT(*) as row_count FROM connectivity_test;
+              
+              -- Cleanup
+              DROP TABLE connectivity_test;
+              
+              -- Final success message
+              SELECT 'Database connectivity test completed successfully' as status;
+              EOF
+              
+              echo ""
+              echo "✓ All connectivity tests passed"
   backoffLimit: 3
+  activeDeadlineSeconds: 600
