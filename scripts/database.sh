@@ -214,10 +214,7 @@ fi
 # Step 1: Insert test data
 echo ""
 echo "Step 1️⃣ : Inserting test data into database..."
-kubectl exec -i "$DB_POD" -n db-layer -- env PGPASSWORD="$PG_PASSWORD" psql -U postgres -d startup_db <<'SQL' || {
-  echo "ERROR: Failed to insert test data"
-  exit 1
-}
+if ! kubectl exec -i "$DB_POD" -n db-layer -- env PGPASSWORD="$PG_PASSWORD" psql -U postgres -d startup_db -c "
 CREATE TABLE IF NOT EXISTS persistence_test (
   id SERIAL PRIMARY KEY,
   test_name VARCHAR(255),
@@ -226,21 +223,39 @@ CREATE TABLE IF NOT EXISTS persistence_test (
 
 INSERT INTO persistence_test (test_name) VALUES ('test_data_before_restart');
 SELECT * FROM persistence_test;
-SQL
+"; then
+  echo "❌ ERROR: Failed to insert test data"
+  exit 1
+fi
 echo "✅ Test data inserted successfully"
 
 # Step 2: Delete the database pod
 echo ""
 echo "Step 2️⃣ : Deleting PostgreSQL pod to trigger restart..."
+
+# Get the original pod's UID to detect when a new instance is created
+ORIGINAL_UID=$(kubectl get pod "$DB_POD" -n db-layer -o jsonpath='{.metadata.uid}' 2>/dev/null || echo "")
+echo "Original pod UID: $ORIGINAL_UID"
+
 kubectl delete pod "$DB_POD" -n db-layer --wait=false
 echo "Pod deletion initiated: $DB_POD"
 
 # Step 3: Wait for pod to restart
 echo ""
 echo "Step 3️⃣ : Waiting for PostgreSQL pod to restart..."
-echo "⏳ Waiting up to 3 minutes for pod to restart..."
+echo "⏳ Waiting up to 3 minutes for pod to restart with a new instance..."
 
-# Use exponential backoff to check if pod is back
+# Wait for the pod to be deleted first
+echo "Waiting for original pod to be deleted..."
+for i in {1..30}; do
+  if ! kubectl get pod "$DB_POD" -n db-layer >/dev/null 2>&1; then
+    echo "✅ Original pod deleted"
+    break
+  fi
+  sleep 2
+done
+
+# Now wait for the pod to be recreated and ready
 timeout=180
 elapsed=0
 pod_restarted=false
@@ -248,14 +263,20 @@ pod_restarted=false
 while [ $elapsed -lt $timeout ]; do
   NEW_DB_POD=$(kubectl get pods -n db-layer -l app.kubernetes.io/name=postgresql,app.kubernetes.io/instance=my-db -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
   
-  if [ -n "$NEW_DB_POD" ] && [ "$NEW_DB_POD" != "$DB_POD" ]; then
-    echo "✅ New pod created: $NEW_DB_POD"
-    # Check if pod is ready
-    pod_ready=$(kubectl get pod "$NEW_DB_POD" -n db-layer -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
-    if [ "$pod_ready" = "True" ]; then
-      echo "✅ Pod is Ready"
-      pod_restarted=true
-      break
+  if [ -n "$NEW_DB_POD" ]; then
+    # Check if it's a new instance (different UID)
+    NEW_UID=$(kubectl get pod "$NEW_DB_POD" -n db-layer -o jsonpath='{.metadata.uid}' 2>/dev/null || echo "")
+    
+    if [ -n "$NEW_UID" ] && [ "$NEW_UID" != "$ORIGINAL_UID" ]; then
+      echo "✅ New pod instance created: $NEW_DB_POD (UID: $NEW_UID)"
+      # Check if pod is ready
+      pod_ready=$(kubectl get pod "$NEW_DB_POD" -n db-layer -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
+      if [ "$pod_ready" = "True" ]; then
+        echo "✅ Pod is Ready"
+        pod_restarted=true
+        DB_POD="$NEW_DB_POD"  # Update DB_POD to the new pod name
+        break
+      fi
     fi
   fi
   
@@ -265,6 +286,7 @@ done
 
 if [ "$pod_restarted" = false ]; then
   echo "❌ ERROR: PostgreSQL pod did not restart within timeout"
+  echo "Current pod status:"
   kubectl get pods -n db-layer -o wide
   exit 1
 fi
@@ -279,7 +301,7 @@ echo "Step 4️⃣ : Verifying data persistence after restart..."
 echo "Querying test data from restarted database..."
 
 # Query the data and capture output
-QUERY_OUTPUT=$(kubectl exec -i "$NEW_DB_POD" -n db-layer -- env PGPASSWORD="$PG_PASSWORD" psql -U postgres -d startup_db -c "SELECT * FROM persistence_test;" 2>&1)
+QUERY_OUTPUT=$(kubectl exec -i "$DB_POD" -n db-layer -- env PGPASSWORD="$PG_PASSWORD" psql -U postgres -d startup_db -c "SELECT * FROM persistence_test;" 2>&1)
 echo "Query output:"
 echo "$QUERY_OUTPUT"
 
